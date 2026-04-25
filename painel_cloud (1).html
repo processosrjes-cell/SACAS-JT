@@ -645,25 +645,36 @@ async function login() {
     return;
   }
 
-  // Verifica localmente primeiro (usuários salvos em sessões anteriores)
-  const loc = (JSON.parse(localStorage.getItem('jt_users') || '[]'))
-              .find(u => u.email === email && u.senha === senha);
-  if (loc) { entrar(loc); return; }
-
-  // Tenta no servidor
+  // Tenta no servidor primeiro (garante dados atualizados, incluindo base vinculada)
   stEl.style.display = 'block';
-  const res = await GET('login', { email, senha });
-  stEl.style.display = 'none';
-  if (res.ok && res.usuario) {
-    // Salva localmente para uso offline futuro
-    const lu = JSON.parse(localStorage.getItem('jt_users') || '[]');
-    if (!lu.find(u => u.email === email)) {
+  stEl.textContent = 'Verificando...';
+  try {
+    const res = await GET('login', { email, senha });
+    stEl.style.display = 'none';
+    if (res.ok && res.usuario) {
+      // Atualiza cache local com dados frescos do servidor
+      let lu = JSON.parse(localStorage.getItem('jt_users') || '[]');
+      lu = lu.filter(u => u.email !== email); // remove versão antiga
       lu.push({ ...res.usuario, senha });
       localStorage.setItem('jt_users', JSON.stringify(lu));
+      entrar(res.usuario);
+      return;
     }
-    entrar(res.usuario);
-  } else {
+    // Servidor respondeu mas credenciais erradas
     showErr(res.erro || 'E-mail ou senha incorretos.');
+    return;
+  } catch(e) {
+    stEl.style.display = 'none';
+    // Servidor falhou — tenta cache local como fallback offline
+  }
+
+  // Fallback offline: usa cache local
+  const loc = (JSON.parse(localStorage.getItem('jt_users') || '[]'))
+              .find(u => u.email === email && u.senha === senha);
+  if (loc) {
+    entrar(loc);
+  } else {
+    showErr('E-mail ou senha incorretos.');
   }
 }
 
@@ -674,21 +685,31 @@ function showErr(msg) {
 }
 
 function entrar(u) {
+  // Garante que base está como string limpa
+  u.base = (u.base || u.Base || '').trim();
   usuario = u;
   sessionStorage.setItem('jt_sessao', JSON.stringify(u));
-  // base do usuário fica em u.base (pode ser '' se não vinculada)
+
   document.getElementById('tela-login').classList.add('off');
   document.getElementById('hdr').style.display = 'flex';
   document.getElementById('nav').style.display = 'flex';
   document.getElementById('main').style.display = 'block';
 
-  // Pill do usuário
+  // Pill: mostra nome + base vinculada se houver
   const pill = document.getElementById('hpill');
   pill.className = u.nivel === 'admin' ? 'pill admin' : 'pill user';
-  pill.textContent = (u.nivel === 'admin' ? '★ ' : '● ') + u.nome;
+  pill.textContent = (u.nivel === 'admin' ? '★ ' : '● ') + u.nome
+    + (u.base ? ' — ' + u.base : '');
 
-  // Aplica permissões de abas e funcionalidades
+  // Aplica permissões de abas
   aplicarPermissoes(u.nivel);
+
+  // Bloqueia select de base imediatamente (antes mesmo da sincronização)
+  // Isso garante que o usuário não vê o select livre nem por um segundo
+  updBase();
+  updDevBase();
+
+  // Sincroniza com o servidor em background
   sincronizar();
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(sincronizar, 30000);
@@ -770,16 +791,18 @@ async function sincronizar() {
       if (res.proprias  && res.proprias.length)  props  = res.proprias.map(b => ({nome:b.Nome,cidade:b.Cidade,uf:b.UF}));
 
       if (res.usuarios) {
-        // Atualiza base do usuário logado caso tenha mudado
+        // Atualiza base do usuário logado com dado fresco do servidor
         const uAtual = res.usuarios.find(u => (u.Email||u.email||'').toLowerCase() === usuario?.email?.toLowerCase());
         if (uAtual && usuario) {
-          usuario.base = uAtual.Base || uAtual.base || '';
+          usuario.base = (uAtual.Base || uAtual.base || '').trim();
           sessionStorage.setItem('jt_sessao', JSON.stringify(usuario));
         }
         if (usuario && usuario.nivel === 'admin') rUsers(res.usuarios);
       }
 
-      updBase(); updDevBase();
+      // Sempre chama DEPOIS de franqs/props e usuario.base prontos
+      updBase();
+      updDevBase();
       rPainel(); rPend(); rConf(); rHist(); rDev();
     }
   } finally {
@@ -801,45 +824,61 @@ function aba(id) {
 //  BASES
 // ══════════════════════════════════════════════
 function updBase() {
-  const sel  = document.getElementById('e-base');
-  const baseFixa = usuario?.base || '';
+  const sel      = document.getElementById('e-base');
+  const btF      = document.getElementById('btf');
+  const btP      = document.getElementById('btp');
+  if (!sel) return;
 
-  // Se o usuário tem uma base vinculada, bloqueia o select nela
+  const baseFixa = (usuario?.base || '').trim();
+
   if (baseFixa) {
-    sel.innerHTML = '';
-    const o = document.createElement('option');
-    o.value = baseFixa;
-    // Busca info da base
-    const info = [...franqs, ...props].find(b => b.nome === baseFixa);
-    o.textContent = baseFixa + (info ? ' — ' + info.cidade + '/' + info.uf : '');
-    sel.appendChild(o);
-    sel.value = baseFixa;
-    sel.disabled = true;
-    sel.style.opacity = '0.7';
-    sel.title = 'Sua base está vinculada ao seu usuário';
-
-    // Detecta e trava o tipo (F/P)
-    const isFranq = baseFixa.trim().toUpperCase().startsWith('F ');
+    // ── MODO BLOQUEADO: usuário tem base vinculada ──
+    // Detecta tipo pela sigla (começa com "F " = franquia)
+    const isFranq = baseFixa.toUpperCase().startsWith('F ');
     tipoSel = isFranq ? 'F' : 'P';
-    document.getElementById('btf').classList.toggle('on', isFranq);
-    document.getElementById('btp').classList.toggle('on', !isFranq);
-    document.getElementById('btf').style.pointerEvents = 'none';
-    document.getElementById('btp').style.pointerEvents = 'none';
-    document.getElementById('btf').style.opacity = '0.6';
-    document.getElementById('btp').style.opacity = '0.6';
+
+    // Atualiza botões de tipo visualmente e trava
+    if (btF) { btF.classList.toggle('on', isFranq);  btF.style.pointerEvents='none'; btF.style.opacity='0.5'; }
+    if (btP) { btP.classList.toggle('on', !isFranq); btP.style.pointerEvents='none'; btP.style.opacity='0.5'; }
+
+    // Monta o select com apenas a base do usuário
+    sel.innerHTML = '';
+    const info = [...franqs, ...props].find(b => b.nome === baseFixa);
+    const opt  = document.createElement('option');
+    opt.value       = baseFixa;
+    opt.textContent = baseFixa + (info ? ' — ' + info.cidade + '/' + info.uf : '');
+    sel.appendChild(opt);
+    sel.value    = baseFixa;
+    sel.disabled = true;
+    sel.style.opacity = '0.75';
+    sel.style.cursor  = 'not-allowed';
+    sel.title = '🔒 Base vinculada ao seu usuário';
+
+    // Aviso visual abaixo do select
+    let aviso = document.getElementById('base-fixa-aviso');
+    if (!aviso) {
+      aviso = document.createElement('div');
+      aviso.id = 'base-fixa-aviso';
+      aviso.style.cssText = 'font-size:11px;color:#4ade80;margin-top:4px;display:flex;align-items:center;gap:4px';
+      sel.parentNode.appendChild(aviso);
+    }
+    aviso.textContent = '🔒 Sua base está vinculada ao seu usuário';
     return;
   }
 
-  // Sem base vinculada (admin/destino/informativo) — select livre
-  sel.disabled = false;
-  sel.style.opacity = '';
-  sel.title = '';
-  document.getElementById('btf').style.pointerEvents = '';
-  document.getElementById('btp').style.pointerEvents = '';
-  document.getElementById('btf').style.opacity = '';
-  document.getElementById('btp').style.opacity = '';
+  // ── MODO LIVRE: admin / destino / informativo ──
+  sel.disabled          = false;
+  sel.style.opacity     = '';
+  sel.style.cursor      = '';
+  sel.title             = '';
+  if (btF) { btF.style.pointerEvents=''; btF.style.opacity=''; }
+  if (btP) { btP.style.pointerEvents=''; btP.style.opacity=''; }
 
-  const val  = sel.value;
+  // Remove aviso se existir
+  const aviso = document.getElementById('base-fixa-aviso');
+  if (aviso) aviso.remove();
+
+  const val   = sel.value;
   const lista = tipoSel === 'F' ? franqs : props;
   sel.innerHTML = '<option value="">Selecione...</option>';
   lista.forEach(b => {
@@ -851,7 +890,7 @@ function updBase() {
 }
 
 function setTipo(t) {
-  if (usuario?.base) return; // base vinculada — não permite trocar tipo
+  if ((usuario?.base || '').trim()) return; // base vinculada — bloqueia troca
   tipoSel = t;
   document.getElementById('btf').classList.toggle('on', t==='F');
   document.getElementById('btp').classList.toggle('on', t==='P');
@@ -974,7 +1013,11 @@ function dropFoto(e) {
 //  ENVIO
 // ══════════════════════════════════════════════
 async function enviar() {
-  const base = document.getElementById('e-base').value;
+  // Usa sempre a base vinculada se o usuário tiver uma — impede bypass
+  const baseSelect  = document.getElementById('e-base').value;
+  const baseUsuario = (usuario?.base || '').trim();
+  const base = baseUsuario || baseSelect;
+
   const dest = document.getElementById('e-dest').value;
   const data = document.getElementById('e-data').value;
   const resp = document.getElementById('e-resp').value.trim();
@@ -1000,8 +1043,12 @@ async function enviar() {
     if (chipsEnvio.length !== sacas && !confirm(`${chipsEnvio.length} chip(s) para ${sacas} saca(s). Continuar?`)) return;
   }
 
-  const tipo = tipoSel === 'F' ? 'Franquia' : 'Base Própria';
-  const res  = await GET('novo_envio', { base, tipo, destino:dest, sacas, tipoSaca:sacaTipo, chips:chipsEnvio, data, responsavel:resp, obs });
+  const tipo = base.toUpperCase().startsWith('F ') ? 'Franquia' : 'Base Própria';
+  const res  = await GET('novo_envio', {
+    base, tipo, destino:dest, sacas, tipoSaca:sacaTipo,
+    chips:chipsEnvio, data, responsavel:resp, obs,
+    _base: (usuario?.base || '').trim()  // base vinculada para validação no servidor
+  });
 
   if (res.ok) {
     alert('✅ Envio registrado!');
