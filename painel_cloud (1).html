@@ -473,7 +473,7 @@ tr:hover td{background:#1e1e1e}
   </div>
   <div class="card">
     <div class="ch"><span class="cht">Em trânsito</span></div>
-    <table><thead><tr><th>Base</th><th>Tipo</th><th>Destino</th><th>Sacas</th><th>Saca</th><th>Chips</th><th>Data</th><th>Resp.</th><th>Foto</th></tr></thead><tbody id="tb-pend"></tbody></table>
+    <table><thead><tr><th>Base</th><th>Tipo</th><th>Destino</th><th>Sacas</th><th>Saca</th><th>Chips</th><th>Data</th><th>Resp.</th><th>Foto</th><th>Ação</th></tr></thead><tbody id="tb-pend"></tbody></table>
   </div>
 </div>
 
@@ -554,14 +554,114 @@ tr:hover td{background:#1e1e1e}
 
 <!-- ADMIN -->
 <div class="pane" id="p-admin">
-  <div class="g2">
+
+  <!-- USUÁRIOS -->
+  <div class="g2" style="margin-bottom:14px">
     <div class="card">
-      <div class="ch"><span class="cht">Usuários</span><button class="btn purple" id="btn-novo-user" style="font-size:12px" onclick="abrirModalUser()">+ Adicionar</button></div>
+      <div class="ch"><span class="cht">👥 Usuários cadastrados</span><button class="btn purple" id="btn-novo-user" style="font-size:12px" onclick="abrirModalUser()">+ Adicionar</button></div>
       <div style="padding:12px;display:grid;gap:7px" id="u-lista"></div>
     </div>
     <div class="card">
-      <div class="ch"><span class="cht">Registro de acessos</span></div>
+      <div class="ch"><span class="cht">📋 Registro de acessos</span></div>
       <table><thead><tr><th>Nome</th><th>E-mail</th><th>Nível</th><th>Base vinculada</th><th>Ação</th></tr></thead><tbody id="tb-users"></tbody></table>
+    </div>
+  </div>
+
+  <!-- UPLOAD DE BASES -->
+  <div class="card">
+    <div class="ch">
+      <span class="cht">📂 Atualizar lista de bases (Franquias e Bases Próprias)</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="bases-contagem" style="font-size:12px;color:var(--muted)"></span>
+        <button class="btn" style="font-size:12px" onclick="sincronizar()">↻ Recarregar</button>
+      </div>
+    </div>
+    <div style="padding:15px;display:grid;gap:14px">
+
+      <!-- INSTRUÇÕES -->
+      <div style="background:#1a1a1a;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);line-height:1.7">
+        <strong style="color:var(--text)">Como atualizar:</strong><br>
+        Faça upload de uma planilha <strong style="color:#4ade80">.xlsx</strong> ou <strong style="color:#4ade80">.csv</strong> com as colunas:
+        <code style="background:#111;padding:1px 6px;border-radius:4px;color:#fbbf24">Nome</code>
+        <code style="background:#111;padding:1px 6px;border-radius:4px;color:#fbbf24">Cidade</code>
+        <code style="background:#111;padding:1px 6px;border-radius:4px;color:#fbbf24">UF</code>
+        <code style="background:#111;padding:1px 6px;border-radius:4px;color:#fbbf24">Tipo</code><br>
+        No campo <strong style="color:var(--text)">Tipo</strong>, use <code style="background:#111;padding:1px 6px;border-radius:4px;color:#a78bfa">Franquia</code> ou <code style="background:#111;padding:1px 6px;border-radius:4px;color:#a78bfa">Base Propria</code>.<br>
+        Bases cujo nome começa com <strong style="color:var(--text)">F </strong> são detectadas automaticamente como Franquias.
+      </div>
+
+      <!-- DROP ZONE -->
+      <div id="bases-drop" onclick="document.getElementById('inp-bases').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="basesDropFile(event)"
+        style="border:2px dashed var(--border);border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:.15s;background:var(--surface2)">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--hint)" stroke-width="1.5" style="display:block;margin:0 auto 10px">
+          <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12V4M8 8l4-4 4 4"/>
+        </svg>
+        <p style="font-size:13px;color:var(--muted)">Arraste o arquivo aqui ou <span style="color:#4ade80">clique para selecionar</span></p>
+        <p style="font-size:11px;color:var(--hint);margin-top:4px">Formatos aceitos: .xlsx, .xls, .csv</p>
+        <input type="file" id="inp-bases" accept=".xlsx,.xls,.csv" style="display:none" onchange="basesCarregarArquivo(this)">
+      </div>
+
+      <!-- PREVIEW ANTES DE ENVIAR -->
+      <div id="bases-preview" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:13px;font-weight:500;color:var(--text)" id="bases-preview-titulo">Preview</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn danger" style="font-size:12px" onclick="basesLimparPreview()">✕ Cancelar</button>
+            <button class="btn pri" style="font-size:12px" id="btn-bases-enviar" onclick="basesEnviar()">
+              ✅ Confirmar e atualizar no servidor
+            </button>
+          </div>
+        </div>
+        <div class="g2">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--purple);margin-bottom:6px">
+              🏪 Franquias — <span id="cnt-franqs-prev">0</span> registros
+            </div>
+            <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+              <table style="width:100%"><thead><tr><th>Nome</th><th>Cidade</th><th>UF</th></tr></thead>
+              <tbody id="tb-franqs-prev"></tbody></table>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#38bdf8;margin-bottom:6px">
+              🏢 Bases Próprias — <span id="cnt-props-prev">0</span> registros
+            </div>
+            <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+              <table style="width:100%"><thead><tr><th>Nome</th><th>Cidade</th><th>UF</th></tr></thead>
+              <tbody id="tb-props-prev"></tbody></table>
+            </div>
+          </div>
+        </div>
+        <div id="bases-aviso" style="margin-top:10px;font-size:12px;color:var(--amber);display:none"></div>
+      </div>
+
+      <!-- RESULTADO -->
+      <div id="bases-resultado" style="display:none;font-size:13px;padding:10px 14px;border-radius:6px"></div>
+
+      <!-- LISTA ATUAL -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+          <span>Lista atual no sistema</span>
+          <div style="display:flex;gap:12px">
+            <span style="color:var(--purple)">🏪 Franquias: <strong id="cnt-f-atual">—</strong></span>
+            <span style="color:#38bdf8">🏢 Próprias: <strong id="cnt-p-atual">—</strong></span>
+          </div>
+        </div>
+        <div class="g2">
+          <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+            <table style="width:100%"><thead><tr><th>Franquia</th><th>Cidade</th><th>UF</th></tr></thead>
+            <tbody id="tb-franqs-atual"></tbody></table>
+          </div>
+          <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+            <table style="width:100%"><thead><tr><th>Base Própria</th><th>Cidade</th><th>UF</th></tr></thead>
+            <tbody id="tb-props-atual"></tbody></table>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -803,6 +903,7 @@ async function sincronizar() {
       // Sempre chama DEPOIS de franqs/props e usuario.base prontos
       updBase();
       updDevBase();
+      atualizarListaBaseAtual();
       rPainel(); rPend(); rConf(); rHist(); rDev();
     }
   } finally {
@@ -818,6 +919,8 @@ function aba(id) {
   document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
   document.getElementById('t-'+id).classList.add('on');
   document.getElementById('p-'+id).classList.add('on');
+  // Ao abrir admin, atualiza lista de bases
+  if (id === 'admin') { renderListaUsers(); atualizarListaBaseAtual(); }
 }
 
 // ══════════════════════════════════════════════
@@ -1211,6 +1314,242 @@ async function executarOK() {
 }
 
 // ══════════════════════════════════════════════
+//  CANCELAR ENVIO
+// ══════════════════════════════════════════════
+async function cancelarEnvio(id, base) {
+  if (!confirm(
+    '⚠️ Cancelar este envio?\n\n' +
+    'Base: ' + base + '\n\n' +
+    'Esta ação remove o registro permanentemente.\n' +
+    'Só é possível cancelar envios ainda em trânsito.'
+  )) return;
+
+  const res = await GET('cancelar_envio', {
+    id,
+    _email: usuario?.email || ''
+  });
+
+  if (res.ok) {
+    await sincronizar();
+    alert('✅ Envio cancelado com sucesso.');
+  } else {
+    alert('Não foi possível cancelar.\n\nMotivo: ' + (res.erro || 'Erro desconhecido'));
+  }
+}
+
+// ══════════════════════════════════════════════
+//  UPLOAD DE BASES (ADMIN)
+// ══════════════════════════════════════════════
+let basesPreviewFranqs = [];
+let basesPreviewProps  = [];
+
+function basesDropFile(e) {
+  e.preventDefault();
+  document.getElementById('bases-drop').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById('inp-bases').value = ''; basesProcessar(f); }
+}
+
+function basesCarregarArquivo(inp) {
+  const f = inp.files[0];
+  if (f) basesProcessar(f);
+}
+
+function basesProcessar(file) {
+  const ext = file.name.toLowerCase().split('.').pop();
+  document.getElementById('bases-resultado').style.display = 'none';
+  document.getElementById('bases-preview').style.display   = 'none';
+  document.getElementById('bases-drop').style.borderColor  = '#fbbf24';
+
+  const reader = new FileReader();
+
+  if (ext === 'csv') {
+    reader.onload = e => basesParsearCSV(e.target.result, file.name);
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    // XLSX — carrega SheetJS dinamicamente
+    if (typeof XLSX === 'undefined') {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => { reader.onload = e => basesParsearXLSX(e.target.result, file.name); reader.readAsArrayBuffer(file); };
+      s.onerror = () => alert('Erro ao carregar biblioteca XLSX. Verifique sua conexão.');
+      document.head.appendChild(s);
+    } else {
+      reader.onload = e => basesParsearXLSX(e.target.result, file.name);
+      reader.readAsArrayBuffer(file);
+    }
+  }
+}
+
+function basesParsearXLSX(buffer, nome) {
+  try {
+    const wb   = XLSX.read(buffer, { type: 'array' });
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    basesClassificar(rows, nome);
+  } catch(e) {
+    basesErro('Erro ao ler XLSX: ' + e.message);
+  }
+}
+
+function basesParsearCSV(text, nome) {
+  try {
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    if (lines.length < 2) { basesErro('Arquivo CSV vazio ou sem dados.'); return; }
+    const header = lines[0].split(/[;,\t]/).map(h => h.trim().replace(/^"|"$/g,''));
+    const rows = lines.slice(1).map(l => {
+      const cols = l.split(/[;,\t]/);
+      const obj = {};
+      header.forEach((h, i) => obj[h] = (cols[i]||'').trim().replace(/^"|"$/g,''));
+      return obj;
+    });
+    basesClassificar(rows, nome);
+  } catch(e) {
+    basesErro('Erro ao ler CSV: ' + e.message);
+  }
+}
+
+function basesClassificar(rows, nomeArquivo) {
+  // Detecta colunas com nomes flexíveis
+  const sample = rows[0] || {};
+  const keys   = Object.keys(sample).map(k => k.toLowerCase());
+
+  const colNome   = Object.keys(sample).find(k => k.toLowerCase().includes('nome'));
+  const colCidade = Object.keys(sample).find(k => k.toLowerCase().includes('cidade') || k.toLowerCase().includes('munic'));
+  const colUF     = Object.keys(sample).find(k => k.toLowerCase() === 'uf' || k.toLowerCase() === 'estado' || k.toLowerCase() === 'prov');
+  const colTipo   = Object.keys(sample).find(k => k.toLowerCase().includes('tipo'));
+
+  if (!colNome) { basesErro('Coluna "Nome" não encontrada. Verifique o cabeçalho do arquivo.'); return; }
+
+  const franqs = [], props = [];
+
+  rows.forEach(r => {
+    const nome   = String(r[colNome]  || '').trim();
+    const cidade = String(r[colCidade]|| '').trim();
+    const uf     = String(r[colUF]    || '').trim().toUpperCase().substring(0,2);
+    const tipo   = String(r[colTipo]  || '').trim().toLowerCase();
+    if (!nome) return;
+
+    const obj = { nome, cidade, uf };
+
+    // Classifica: pelo campo Tipo OU pela sigla (começa com "F ")
+    const isFranq = tipo.includes('franq') || nome.toUpperCase().startsWith('F ');
+    if (isFranq) franqs.push(obj);
+    else         props.push(obj);
+  });
+
+  if (!franqs.length && !props.length) {
+    basesErro('Nenhuma base encontrada no arquivo. Verifique se a coluna Nome está preenchida.');
+    return;
+  }
+
+  basesPreviewFranqs = franqs;
+  basesPreviewProps  = props;
+  basesExibirPreview(nomeArquivo);
+}
+
+function basesExibirPreview(nomeArquivo) {
+  document.getElementById('bases-drop').style.borderColor = '#4ade80';
+  document.getElementById('bases-preview-titulo').textContent =
+    'Preview — ' + nomeArquivo + ' (' + (basesPreviewFranqs.length + basesPreviewProps.length) + ' bases)';
+
+  // Tabela de franquias
+  set('cnt-franqs-prev', basesPreviewFranqs.length);
+  document.getElementById('tb-franqs-prev').innerHTML =
+    basesPreviewFranqs.length
+      ? basesPreviewFranqs.map(b => `<tr><td>${b.nome}</td><td style="color:var(--muted)">${b.cidade}</td><td style="color:var(--muted)">${b.uf}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">Nenhuma franquia</td></tr>';
+
+  // Tabela de bases próprias
+  set('cnt-props-prev', basesPreviewProps.length);
+  document.getElementById('tb-props-prev').innerHTML =
+    basesPreviewProps.length
+      ? basesPreviewProps.map(b => `<tr><td>${b.nome}</td><td style="color:var(--muted)">${b.cidade}</td><td style="color:var(--muted)">${b.uf}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">Nenhuma base própria</td></tr>';
+
+  // Aviso se ambos vazios de um lado
+  const aviso = document.getElementById('bases-aviso');
+  if (!basesPreviewFranqs.length || !basesPreviewProps.length) {
+    aviso.textContent = '⚠️ Atenção: ' +
+      (!basesPreviewFranqs.length ? 'Nenhuma franquia detectada.' : '') +
+      (!basesPreviewProps.length  ? 'Nenhuma base própria detectada.' : '') +
+      ' Verifique se o arquivo está correto antes de confirmar.';
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+
+  document.getElementById('bases-preview').style.display = 'block';
+  document.getElementById('bases-preview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function basesEnviar() {
+  if (!basesPreviewFranqs.length && !basesPreviewProps.length) {
+    alert('Nenhuma base para enviar.');
+    return;
+  }
+
+  if (!confirm(
+    'Confirmar atualização das bases no servidor?\n\n' +
+    '🏪 Franquias: ' + basesPreviewFranqs.length + '\n' +
+    '🏢 Bases Próprias: ' + basesPreviewProps.length + '\n\n' +
+    'A lista atual será SUBSTITUÍDA pela nova.'
+  )) return;
+
+  const btn = document.getElementById('btn-bases-enviar');
+  if (btn) { btn.textContent = 'Enviando...'; btn.disabled = true; }
+
+  const res = await GET('upload_bases', {
+    franquias: basesPreviewFranqs,
+    proprias:  basesPreviewProps
+  });
+
+  if (btn) { btn.textContent = '✅ Confirmar e atualizar no servidor'; btn.disabled = false; }
+
+  const el = document.getElementById('bases-resultado');
+  if (res.ok) {
+    el.textContent   = '✅ ' + (res.msg || 'Bases atualizadas com sucesso!');
+    el.style.background  = 'var(--green2)';
+    el.style.color       = '#4ade80';
+    el.style.border      = '1px solid #1a4d2e';
+    el.style.display     = 'block';
+    basesLimparPreview();
+    await sincronizar();
+  } else {
+    el.textContent   = '❌ Erro: ' + (res.erro || 'Falha ao atualizar.');
+    el.style.background  = 'var(--red3)';
+    el.style.color       = '#ff8888';
+    el.style.border      = '1px solid #5a0010';
+    el.style.display     = 'block';
+  }
+}
+
+function basesLimparPreview() {
+  basesPreviewFranqs = [];
+  basesPreviewProps  = [];
+  document.getElementById('bases-preview').style.display = 'none';
+  document.getElementById('bases-drop').style.borderColor = '';
+  document.getElementById('inp-bases').value = '';
+}
+
+function basesErro(msg) {
+  document.getElementById('bases-drop').style.borderColor = 'var(--red)';
+  alert('❌ ' + msg);
+}
+
+function atualizarListaBaseAtual() {
+  // Atualiza as tabelas de lista atual na aba Admin
+  const tf = document.getElementById('tb-franqs-atual');
+  const tp = document.getElementById('tb-props-atual');
+  const cf = document.getElementById('cnt-f-atual');
+  const cp = document.getElementById('cnt-p-atual');
+  if (cf) cf.textContent = franqs.length;
+  if (cp) cp.textContent = props.length;
+  if (tf) tf.innerHTML = franqs.map(b => `<tr><td>${b.nome}</td><td style="color:var(--muted)">${b.cidade||'—'}</td><td style="color:var(--muted)">${b.uf||'—'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nenhuma</td></tr>';
+  if (tp) tp.innerHTML = props.map(b  => `<tr><td>${b.nome}</td><td style="color:var(--muted)">${b.cidade||'—'}</td><td style="color:var(--muted)">${b.uf||'—'}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nenhuma</td></tr>';
+}
+
+// ══════════════════════════════════════════════
 //  DEVOLUTIVAS
 // ══════════════════════════════════════════════
 async function regDev() {
@@ -1394,10 +1733,16 @@ function rPainel() {
 function rPend() {
   const trans = dados.filter(e => e.Status === 'Em transito');
   const tb = document.getElementById('tb-pend');
+  const podeCanc = ['base','admin'].includes(usuario?.nivel);
   tb.innerHTML = trans.length ? trans.map(e => {
     const tBadge = e.Tipo==='Franquia' ? `<span class="b bp">F</span>` : `<span class="b bgr">BP</span>`;
-    return `<tr><td>${e.Base}&nbsp;${tBadge}</td><td><span class="b bb">${e.Destino}</span></td><td><strong>${parseInt(e.Sacas||0).toLocaleString('pt-BR')}</strong></td><td>${sacaBadge(e)}</td><td>${chipsBtn(e)}</td><td>${fmtD(e.Data)}</td><td>${e.Responsavel}</td><td>${fotoCell(e)}</td></tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">Nenhum envio em trânsito</td></tr>';
+    // Base só vê o próprio envio; admin vê todos
+    const baseOk = !usuario?.base || e.Base === usuario.base;
+    const btnCanc = (podeCanc && baseOk)
+      ? `<button class="btn danger" style="font-size:11px;padding:3px 9px" onclick="cancelarEnvio('${e.ID}','${(e.Base||'').replace(/'/g,"\'")}')">✕ Cancelar</button>`
+      : '—';
+    return `<tr><td>${e.Base}&nbsp;${tBadge}</td><td><span class="b bb">${e.Destino}</span></td><td><strong>${parseInt(e.Sacas||0).toLocaleString('pt-BR')}</strong></td><td>${sacaBadge(e)}</td><td>${chipsBtn(e)}</td><td>${fmtD(e.Data)}</td><td>${e.Responsavel}</td><td>${fotoCell(e)}</td><td>${btnCanc}</td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="empty">Nenhum envio em trânsito</td></tr>';
 }
 
 function statusBadge(e) {
